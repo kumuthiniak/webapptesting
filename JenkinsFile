@@ -1,0 +1,80 @@
+pipeline {
+    agent any
+    
+    environment {
+        DOCKER_IMAGE = 'springboot-blog-webapp'
+        DOCKER_TAG = "${env.BUILD_NUMBER}"
+        // For private registry, add credentials:
+        // DOCKER_REGISTRY = 'your-registry.com'
+    }
+    
+    stages {
+        stage('Checkout') {
+            steps {
+                git branch: 'main', 
+                url: 'https://github.com/kumuthiniak/webapptesting.git',
+                credentialsId: 'Ks2026bc@20' // Set this in Jenkins
+            }
+        }
+        
+        stage('Build and Test') {
+            steps {
+                sh './mvnw clean package' // This runs tests by default
+            }
+            post {
+                success {
+                    echo 'Tests passed and build successful!'
+                }
+                failure {
+                    echo 'Build or tests failed!'
+                    error('Pipeline failed due to build/test errors')
+                }
+            }
+        }
+        
+        stage('Build Docker Image') {
+            steps {
+                script {
+                    docker.build("${env.DOCKER_IMAGE}:${env.DOCKER_TAG}")
+                }
+            }
+        }
+        
+        stage('Run Docker Container') {
+            steps {
+                script {
+                    // Stop and remove any existing container
+                    sh 'docker stop springboot-app || true'
+                    sh 'docker rm springboot-app || true'
+                    
+                    // Run the new container
+                    sh """
+                    docker run -d \
+                    --name springboot-app \
+                    -p 8080:8080 \
+                    --restart unless-stopped \
+                    ${env.DOCKER_IMAGE}:${env.DOCKER_TAG}
+                    """
+                }
+            }
+        }
+        
+        stage('Cleanup') {
+            steps {
+                script {
+                    // Clean up old images to save space
+                    sh 'docker system prune -f'
+                }
+            }
+        }
+    }
+    
+    post {
+        always {
+            echo 'Pipeline completed. Check http://your-server:8080'
+        }
+        failure {
+            echo 'Pipeline failed! Check the logs.'
+        }
+    }
+}
